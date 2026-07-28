@@ -77,26 +77,34 @@ By default **every** Windows Terminal window is intercepted. If you also use
 local WSL or PowerShell tabs, that's wrong there — a Windows path is exactly
 what you want to paste locally, and uploading it to a remote host isn't.
 
-There's no reliable way to ask Windows Terminal what's running in the focused
-tab; it hosts panes as child processes with no exposed mapping from the active
-tab to its process. The dependable signal is the window title, which you can
-pin per profile. In your remote profile's Windows Terminal settings:
+There is no way to ask Windows Terminal what's running in the focused tab. Every
+tab in a window shares one `WindowsTerminal.exe` process, and the console host
+and the shell appear as flat siblings in the process tree — so you can see which
+sessions exist, but never which one has focus. Profile icons don't help either;
+they're rendered internally and aren't exposed to other programs.
+
+The window title is the only per-tab signal. Pin it in each remote profile's
+Windows Terminal settings, since a shell (tmux especially) will otherwise
+overwrite it with something identical everywhere:
 
 ```json
 "tabTitle": "devbox",
 "suppressApplicationTitle": true
 ```
 
-`suppressApplicationTitle` stops the shell from overriding it, so the title is
-constant. Then:
+Then map titles to targets — semicolon-separated, first match wins:
 
 ```powershell
-setx CLIP_TITLE_MATCH devbox
+setx CLIP_HOSTS "devbox=alice@devbox.example.com;build=root@10.0.0.9"
 ```
 
-Ctrl+V now only intercepts in tabs whose title contains `devbox`; everywhere else
-it's an ordinary paste. Substring match, so `"tabTitle": "devbox — prod"` works
-just as well.
+Ctrl+V now uploads to whichever host that tab belongs to. Titles matching
+nothing — local WSL, PowerShell — paste normally. Matching is on substrings, so
+`"tabTitle": "devbox — prod"` still matches `devbox`.
+
+With `CLIP_HOSTS` unset, every Windows Terminal window is intercepted and
+`CLIP_REMOTE_HOST`/`CLIP_REMOTE_USER` are used — fine if you only ever SSH from
+Windows Terminal, wrong the moment you open a local shell in it.
 
 If the files came from the internet, clear the mark-of-the-web tag or
 PowerShell will refuse to run the script:
@@ -190,8 +198,8 @@ Ctrl+V is the correct model.
 
 | Symptom | Cause |
 |---|---|
-| Ctrl+V does nothing unusual | AHK not running, elevation mismatch (if Windows Terminal runs elevated, AHK must too), or the title doesn't match `CLIP_TITLE_MATCH` |
-| Uploads fire in local WSL/PowerShell tabs | `CLIP_TITLE_MATCH` unset — see [Scope it to the right terminal](#scope-it-to-the-right-terminal) |
+| Ctrl+V does nothing unusual | AHK not running, elevation mismatch (if Windows Terminal runs elevated, AHK must too), or the tab title matches no `CLIP_HOSTS` entry |
+| Uploads fire in local WSL/PowerShell tabs | `CLIP_HOSTS` unset — see [Scope it to the right terminal](#scope-it-to-the-right-terminal) |
 | "Upload failed (exit 1)" | Run the `.ps1` by hand to see the real error |
 | "is not digitally signed" | Mark-of-the-web tag; `Unblock-File` the script |
 | "Not configured" | `CLIP_REMOTE_HOST` / `CLIP_REMOTE_USER` unset — `setx` needs a new shell to take effect |
