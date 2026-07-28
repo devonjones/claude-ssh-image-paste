@@ -114,7 +114,17 @@ else {
 
 if ($cleanup) { Remove-Item $cleanup -Force -EA SilentlyContinue }
 
-$joined = $remote -join ' '
+# Quote anything a POSIX shell would mangle. Filenames routinely contain
+# spaces, and without this a multi-file paste joined by spaces can't be
+# taken apart again.
+function ConvertTo-ShellQuoted([string]$p) {
+    if ($p -match "[^A-Za-z0-9._/@%+:,=-]") {
+        return "'" + ($p -replace "'", "'\''") + "'"
+    }
+    return $p
+}
+
+$joined = ($remote | ForEach-Object { ConvertTo-ShellQuoted $_ }) -join ' '
 
 if ($Quiet) {
     # stdout only -- caller handles insertion, clipboard untouched
