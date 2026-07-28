@@ -83,9 +83,14 @@ and the shell appear as flat siblings in the process tree — so you can see whi
 sessions exist, but never which one has focus. Profile icons don't help either;
 they're rendered internally and aren't exposed to other programs.
 
-The window title is the only per-tab signal. Pin it in each remote profile's
-Windows Terminal settings, since a shell (tmux especially) will otherwise
-overwrite it with something identical everywhere:
+The window title is the only per-tab signal. `tools/wt-probe.ahk` reports what
+a focused tab actually exposes — run it, press Ctrl+Alt+P in a tab, and it
+dumps the title plus the full process tree to a message box and your clipboard.
+Worth doing before and after the change below, since the title you *think* a
+tab has and the one it reports are often different.
+
+Pin it in each remote profile's Windows Terminal settings, since a shell (tmux
+especially) will otherwise overwrite it with something identical everywhere:
 
 ```json
 "tabTitle": "devbox",
