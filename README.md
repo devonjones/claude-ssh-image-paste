@@ -1,14 +1,21 @@
-# Pasting images into Claude Code over SSH
+# claude-ssh-image-paste
 
-Ctrl+V in Windows Terminal puts a screenshot into a Claude Code session running
-on `ares`. Text pastes are unaffected.
+Paste screenshots and files into a Claude Code session running over SSH.
+
+Ctrl+V in Windows Terminal uploads whatever is on your clipboard to the remote
+host and types the resulting path into the prompt. Text pastes are untouched.
+
+```
+Win+Shift+S  ->  Ctrl+V  ->  /tmp/clip-20260728-171743.png
+Ctrl+C a file in Explorer  ->  Ctrl+V  ->  /tmp/clip-20260728-172210/wolf-head.svg
+```
 
 ## The problem
 
-Claude Code reads the clipboard of the machine it runs on. Over SSH that's
-`ares`, which has no clipboard and no access to yours. SSH carries no channel
-for image data either — the only clipboard escape sequence terminals implement,
-OSC 52, is text-only.
+Claude Code reads the clipboard of the machine it runs on. Over SSH that's the
+remote host, which has no clipboard and no access to yours. SSH carries no
+channel for image data either — the only clipboard escape sequence terminals
+implement, OSC 52, is text-only.
 
 tmux is not involved in this limitation. Reordering `ssh` and `tmux` changes
 nothing, because Claude Code stays on the far side of the SSH boundary either
@@ -18,135 +25,180 @@ Claude Code onto the machine holding the clipboard. This is the first.
 ## How it works
 
 ```
-Win+Shift+S                 image lands on the Windows clipboard
-   |
+Win+Shift+S, or Ctrl+C on a file
+   |                            content lands on the Windows clipboard
 Ctrl+V in Windows Terminal
    |
-claude-paste.ahk            intercepts, checks the clipboard FORMAT
-   |                          not a bitmap -> ordinary paste, done
-   |                          bitmap      -> continue
-paste-to-ares.ps1           reads clipboard via GDI+, writes a real PNG,
-   |                          scp's it to ares, prints the remote path
+claude-paste.ahk                intercepts, inspects the clipboard FORMAT
+   |                              not image/files -> ordinary paste, done
+   |                              otherwise       -> continue
+clip-to-remote.ps1              bitmap -> GDI+ encodes a real PNG
+   |                            files  -> sent verbatim, names preserved
+   |                            scp to the remote host, path printed
    |
-claude-paste.ahk            types that path into the terminal
+claude-paste.ahk                types the path(s) into the terminal
    |
-Claude Code                 reads /tmp/clip-<stamp>.png as an image
+Claude Code                     reads them as ordinary files
 ```
 
-The AHK script waits on the PowerShell process by blocking on its stdout, so
-the path is never typed before the upload finishes.
+The AHK script waits on the PowerShell process by blocking on its stdout, so a
+path is never typed before its upload finishes.
 
-## The files
+## Requirements
 
-| File | Lives on | Purpose |
-|---|---|---|
-| `paste-to-ares.ps1` | Windows (`C:\Users\devon`) | Clipboard → PNG → scp → prints path |
-| `claude-paste.ahk` | Windows (`C:\Users\devon`) | Ctrl+V interception and branching |
+- Windows with [AutoHotkey **v2**](https://www.autohotkey.com/) (v1 will not run these)
+- OpenSSH client on Windows (`ssh`/`scp` on PATH — ships with Windows 10/11)
+- Key-based SSH auth already working to the remote host
+- A Linux/macOS remote
 
-Masters live in `~/bin` on ares. The Windows copies are what actually run.
+## Install
 
-## Setup from scratch
+Put both files in the same folder, anywhere:
+
+```
+clip-to-remote.ps1
+claude-paste.ahk
+```
+
+Configure once, via environment variables — no file editing, so re-downloading
+never clobbers your settings:
 
 ```powershell
-scp -i "C:/Users/devon/.ssh/id_rsa" devon@ares.evilsoft:bin/paste-to-ares.ps1 $HOME\
-scp -i "C:/Users/devon/.ssh/id_rsa" devon@ares.evilsoft:bin/claude-paste.ahk   $HOME\
-Unblock-File -Path C:\Users\devon\paste-to-ares.ps1, C:\Users\devon\claude-paste.ahk
+setx CLIP_REMOTE_HOST dev.example.com
+setx CLIP_REMOTE_USER alice
 ```
 
-Then edit line 12 of `claude-paste.ahk`:
+Optional: `CLIP_REMOTE_DIR` (default `/tmp`), `CLIP_IDENTITY_FILE` (default
+`%USERPROFILE%/.ssh/id_rsa`), `CLIP_SCRIPT` (if you keep the two files apart).
 
-```autohotkey
-global SCRIPT := "C:\Users\devon\paste-to-ares.ps1"
+### Scope it to the right terminal
+
+By default **every** Windows Terminal window is intercepted. If you also use
+local WSL or PowerShell tabs, that's wrong there — a Windows path is exactly
+what you want to paste locally, and uploading it to a remote host isn't.
+
+There's no reliable way to ask Windows Terminal what's running in the focused
+tab; it hosts panes as child processes with no exposed mapping from the active
+tab to its process. The dependable signal is the window title, which you can
+pin per profile. In your remote profile's Windows Terminal settings:
+
+```json
+"tabTitle": "ares",
+"suppressApplicationTitle": true
 ```
 
-Double-click the `.ahk`. A green **H** appears in the tray. For it to survive
-reboots, drop a shortcut in `shell:startup` (Win+R → `shell:startup`).
+`suppressApplicationTitle` stops the shell from overriding it, so the title is
+constant. Then:
 
-**Every re-pull overwrites line 12.** Reset it and restart the script
-(tray icon → Exit, then double-click again).
+```powershell
+setx CLIP_TITLE_MATCH ares
+```
 
-Nothing goes in `~/.ssh/config`. This reuses the key auth already working for
-your Windows Terminal profile.
+Ctrl+V now only intercepts in tabs whose title contains `ares`; everywhere else
+it's an ordinary paste. Substring match, so `"tabTitle": "ares — prod"` works
+just as well.
 
-## Why the pieces are what they are
+If the files came from the internet, clear the mark-of-the-web tag or
+PowerShell will refuse to run the script:
 
-**`/tmp` on ares, not a real directory.** `/tmp` is tmpfs — 14 GB, RAM-backed,
-so pasted images never touch disk and vanish at reboot. A `systemd-tmpfiles`
-timer also sweeps it daily with a 10-day age policy, so long uptimes don't
-accumulate either.
+```powershell
+Unblock-File -Path .\clip-to-remote.ps1
+```
 
-**Clipboard read via GDI+ in PowerShell, not `wl-paste` in WSL.** Keeps WSLg's
-clipboard translation entirely out of the path. WSL is never involved, which
-also means no dependence on WSL2 localhost forwarding.
+Then double-click `claude-paste.ahk`. A green **H** appears in the tray. To
+start it at login, put a shortcut in `shell:startup` (Win+R → `shell:startup`).
 
-**Typing the path (`SendText`) rather than round-tripping the clipboard.** Your
-image stays on the clipboard after pasting. Ctrl+V into Claude then Ctrl+V into
-Slack both do the right thing. This is why the `.ps1` has a `-Quiet` switch: it
-prints the path to stdout instead of calling `Set-Clipboard`.
+## Usage
 
-**Only real bitmap formats trigger the upload** — CF_DIB (8), CF_BITMAP (2),
-CF_DIBV5 (17). CF_HDROP (15) is deliberately excluded so that copying a file in
-Explorer and hitting Ctrl+V still pastes its path, which is usually what you
-want. Run the `.ps1` by hand for those; it handles Explorer-copied image files
-by shipping the original bytes with no re-encode.
+| Keystroke | Clipboard holds | Result |
+|---|---|---|
+| Ctrl+V | a screenshot | uploaded as `<dir>/clip-<stamp>.png`, path typed |
+| Ctrl+V | file(s) from Explorer | uploaded into `<dir>/clip-<stamp>/`, paths typed |
+| Ctrl+V | text | ordinary paste |
+| Ctrl+Shift+V | anything | ordinary paste, always — bypasses all of this |
 
-**`-o BatchMode=yes` on scp.** The hotkey runs PowerShell hidden. Without this,
-a rejected key would sit forever on an invisible password prompt instead of
+The script can also be run directly, which puts the path on your clipboard
+instead of typing it:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\clip-to-remote.ps1
+```
+
+## Design notes
+
+**Uploads land in `/tmp` by default.** On most Linux distributions that's
+tmpfs — RAM-backed, so pasted content never touches disk and is gone at reboot.
+`systemd-tmpfiles` also sweeps it on a timer. The point is to leave nothing
+behind; set `CLIP_REMOTE_DIR` if you want uploads kept.
+
+**Clipboard is read through GDI+ in PowerShell, not via WSL.** That keeps
+WSLg's clipboard translation entirely out of the path, and means no dependence
+on WSL2 localhost forwarding. WSL is never involved.
+
+**Paths are typed, not pasted.** `SendText` leaves your clipboard intact, so
+Ctrl+V into Claude and then Ctrl+V into Slack both do the right thing. This is
+why the `.ps1` has `-Quiet`: it prints to stdout instead of calling
+`Set-Clipboard`.
+
+**Copied files are uploaded rather than pasted as Windows paths.** A
+`C:\Users\...` path means nothing in a shell on another machine. Ctrl+Shift+V
+exists for the rare case where you want the literal string.
+
+**Multi-file pastes get their own subdirectory.** Original filenames are
+preserved without collisions, and a group of files stays grouped. Directories
+are skipped rather than recursed — `scp -r` on an unbounded tree is not
+something a keystroke should do. Total upload size is capped at 100 MB
+(`-MaxMB` to change).
+
+**`-o BatchMode=yes` on ssh/scp.** The hotkey runs PowerShell hidden. Without
+it, a rejected key would sit forever on an invisible password prompt instead of
 failing fast.
 
-**`-ExecutionPolicy Bypass` in the launcher.** This box is `RemoteSigned` at
-LocalMachine scope, with no GPO. Files can arrive carrying a mark-of-the-web
-tag, which RemoteSigned rejects with a confusing "is not digitally signed"
-error. `Unblock-File` clears it; the Bypass flag means a future re-pull that
-re-marks the file can't break the hotkey.
+**`-ExecutionPolicy Bypass` in the launcher.** Unsigned scripts that carry a
+mark-of-the-web tag are rejected under the default `RemoteSigned` policy, with
+a confusing "is not digitally signed" error. `Unblock-File` clears the tag; the
+flag means a future re-download can't silently break the hotkey.
+
+**The AHK script finds the `.ps1` via `A_ScriptDir`.** Keep them together and
+there is no path to configure and nothing to re-edit after an update.
 
 **No `LocalCommand` in ssh_config, and no clipboard watcher.** `LocalCommand`
 fires once per connection, not once per paste, and would spawn a duplicate for
-every terminal opened to ares. A watcher that auto-uploads on copy is worse
-still: it hijacks the clipboard for images copied for unrelated reasons.
-Explicit invocation on Ctrl+V is the correct model.
+every terminal opened. A watcher that auto-uploads on copy is worse: it hijacks
+the clipboard for things copied for unrelated reasons. Explicit invocation on
+Ctrl+V is the correct model.
 
-## Approaches considered and rejected
+## Alternatives considered
 
 - **A different terminal emulator.** None forward image clipboard data over
-  SSH. WezTerm, Kitty, Ghostty, Alacritty all behave identically here.
+  SSH. WezTerm, Kitty, Ghostty and Alacritty all behave identically here.
 - **VS Code Remote-SSH.** Doesn't work natively; needs an add-on extension, and
   the mature ones are macOS-first. Those extensions also write a remote temp
-  file and inject the path — the same mechanism, just hidden. Costs tmux
-  keybindings (Ctrl+B/K/W collide) for no gain.
+  file and inject its path — the same mechanism, just hidden. Costs tmux
+  keybindings (Ctrl+B/K/W collide) for no real gain.
 - **An MCP server returning image content blocks.** The only genuinely
-  zero-file design — MCP tool results support
-  `{"type":"image","data":"<base64>","mimeType":"image/png"}`, so the image
-  would enter the conversation with nothing written anywhere. Rejected only
-  because `/tmp` being tmpfs made the file question moot. Worth revisiting if
-  the path-pasting ever becomes annoying.
-- **Claude Code local in WSL against ares over sshfs.** Would make Ctrl+V work
-  natively, but trades filesystem performance and on-host tooling for it.
+  zero-file design: MCP tool results support
+  `{"type":"image","data":"<base64>","mimeType":"image/png"}`, so an image
+  could enter the conversation with nothing written anywhere. Rejected because
+  `/tmp` being tmpfs made the file question moot, and it can't carry arbitrary
+  file types the way this can.
+- **Running Claude Code locally against the remote over sshfs.** Ctrl+V would
+  work natively, but it trades filesystem performance and on-host tooling for
+  a paste shortcut.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
-| Ctrl+V does nothing unusual | AHK not running, or elevation mismatch — if Windows Terminal runs as admin, AHK must too |
-| "Upload failed (exit 1)" | Run the `.ps1` by hand (below) to see the real error |
+| Ctrl+V does nothing unusual | AHK not running, elevation mismatch (if Windows Terminal runs elevated, AHK must too), or the title doesn't match `CLIP_TITLE_MATCH` |
+| Uploads fire in local WSL/PowerShell tabs | `CLIP_TITLE_MATCH` unset — see [Scope it to the right terminal](#scope-it-to-the-right-terminal) |
+| "Upload failed (exit 1)" | Run the `.ps1` by hand to see the real error |
 | "is not digitally signed" | Mark-of-the-web tag; `Unblock-File` the script |
-| Hangs a few seconds, then fails | Key auth not working; `BatchMode` should make this fail fast instead |
-| Path types but Claude can't read it | Check the file actually arrived: `ls -la /tmp/clip-*.png` on ares |
-| Works, but `ares.evilsoft` stops resolving | VPN overriding router DNS — pass `-RemoteHost 10.5.2.12` |
+| "Not configured" | `CLIP_REMOTE_HOST` / `CLIP_REMOTE_USER` unset — `setx` needs a new shell to take effect |
+| Hangs, then fails | Key auth isn't working; `BatchMode` should surface this fast |
+| Path appears but can't be read | Confirm it arrived: `ls -la /tmp/clip-*` on the remote |
+| Hostname stops resolving | VPN overriding DNS — pass `-RemoteHost <ip>` |
 
-Run it visibly to see real errors (image on the clipboard first):
+## License
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\devon\paste-to-ares.ps1"
-```
-
-Without `-Quiet` it sets the clipboard to the path and prints what it did, so
-this doubles as a working manual fallback if AHK is ever unavailable.
-
-## Environment specifics
-
-- `ares.evilsoft` → `10.5.2.12`, resolved by the UniFi router (not a hosts file)
-- Key: `C:/Users/devon/.ssh/id_rsa`, passed explicitly with `-i`
-- Windows Terminal launches `ssh.exe` directly, no `Host` entry in ssh_config
-- AutoHotkey **v2** — the script uses v2 syntax and will not run under v1
-- Backslashes are literal in AHK strings; it escapes with a backtick
+MIT
