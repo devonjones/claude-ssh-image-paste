@@ -92,10 +92,22 @@ overwrite it with something identical everywhere:
 "suppressApplicationTitle": true
 ```
 
-Then map titles to targets — semicolon-separated, first match wins:
+If you name profiles after the hosts they connect to, a convention covers most
+of it — no map entries at all:
 
 ```powershell
-setx CLIP_HOSTS "devbox=alice@devbox.example.com;build=root@10.0.0.9"
+setx CLIP_DOMAIN example.com
+setx CLIP_REMOTE_USER alice
+```
+
+A tab titled `Devbox` then resolves to `alice@devbox.example.com`. Only titles
+that look like a DNS label are tried, so `Windows PowerShell` is left alone.
+
+Spell out the exceptions — a different username, or a box with no DNS name.
+Semicolon-separated, first match wins, and these override the convention:
+
+```powershell
+setx CLIP_HOSTS "build=root@10.0.0.9"
 ```
 
 Ctrl+V now uploads to whichever host that tab belongs to. Matching is on
@@ -112,8 +124,14 @@ A title absent from `CLIP_HOSTS` already pastes normally, so this is belt and
 braces — but because matching is on substrings, it's the only way to protect a
 local tab whose name overlaps a remote's. WSL distro tabs are the usual case.
 
-With `CLIP_HOSTS` unset, every Windows Terminal window except those in
-`CLIP_LOCAL` is intercepted, using `CLIP_REMOTE_HOST`/`CLIP_REMOTE_USER`.
+Resolution order for the focused tab's title:
+
+1. matches `CLIP_LOCAL` → never uploads
+2. matches `CLIP_HOSTS` → that target
+3. `CLIP_DOMAIN` set and the title looks like a hostname → `user@title.domain`
+4. neither `CLIP_HOSTS` nor `CLIP_DOMAIN` set → every window is intercepted,
+   using `CLIP_REMOTE_HOST`/`CLIP_REMOTE_USER`
+5. otherwise → ordinary paste
 
 If the files came from the internet, clear the mark-of-the-web tag or
 PowerShell will refuse to run the script:

@@ -43,7 +43,25 @@ global HOST_MAP := ParseHosts(EnvGet("CLIP_HOSTS"))
 ; overlaps a remote's.
 global LOCAL_LIST := ParseList(EnvGet("CLIP_LOCAL"))
 
+; Convention fallback. If a title matches nothing in CLIP_HOSTS, derive the
+; target as <CLIP_REMOTE_USER>@<lowercased title>.<CLIP_DOMAIN>:
+;
+;     setx CLIP_DOMAIN evilsoft
+;     setx CLIP_REMOTE_USER devon
+;
+; so a tab titled "Ares" reaches devon@ares.evilsoft with no map entry. Name
+; profiles after their hosts and CLIP_HOSTS only needs the exceptions --
+; a different username, or a box with no DNS name.
+global DOMAIN       := EnvGet("CLIP_DOMAIN")
+global DEFAULT_USER := EnvGet("CLIP_REMOTE_USER")
+
 SetTitleMatchMode 2
+
+; Only derive from titles that could actually be a DNS label. Keeps
+; "Windows PowerShell" and similar from turning into upload attempts.
+IsHostLabel(s) {
+    return RegExMatch(s, "^[A-Za-z0-9][A-Za-z0-9-]*$") > 0
+}
 
 ParseList(spec) {
     out := []
@@ -76,16 +94,25 @@ RemoteTarget() {
 
     title := WinGetTitle("A")
 
-    ; Deny-list wins over everything, so a local tab can never upload.
+    ; 1. Deny-list wins over everything, so a local tab can never upload.
     for l in LOCAL_LIST
         if InStr(title, l)
             return ""
 
-    if !HOST_MAP.Length
-        return "-"
+    ; 2. Explicit map, which overrides the convention below -- this is where a
+    ;    host with a different username or no DNS name gets spelled out.
     for h in HOST_MAP
         if InStr(title, h.match)
             return h.target
+
+    ; 3. Convention: Ares -> devon@ares.evilsoft
+    if (DOMAIN != "" && IsHostLabel(title))
+        return (DEFAULT_USER != "" ? DEFAULT_USER "@" : "") StrLower(title) "." DOMAIN
+
+    ; 4. Nothing configured at all: fall back to the script's own defaults.
+    if (!HOST_MAP.Length && DOMAIN = "")
+        return "-"
+
     return ""
 }
 
