@@ -98,13 +98,22 @@ Then map titles to targets — semicolon-separated, first match wins:
 setx CLIP_HOSTS "devbox=alice@devbox.example.com;build=root@10.0.0.9"
 ```
 
-Ctrl+V now uploads to whichever host that tab belongs to. Titles matching
-nothing — local WSL, PowerShell — paste normally. Matching is on substrings, so
-`"tabTitle": "devbox — prod"` still matches `devbox`.
+Ctrl+V now uploads to whichever host that tab belongs to. Matching is on
+substrings and is case-insensitive, so a tab titled `Devbox` matches a key of
+`devbox`, and `"tabTitle": "devbox — prod"` still matches too.
 
-With `CLIP_HOSTS` unset, every Windows Terminal window is intercepted and
-`CLIP_REMOTE_HOST`/`CLIP_REMOTE_USER` are used — fine if you only ever SSH from
-Windows Terminal, wrong the moment you open a local shell in it.
+List your local tabs explicitly. They're checked first and never upload:
+
+```powershell
+setx CLIP_LOCAL "Athena;Folio"
+```
+
+A title absent from `CLIP_HOSTS` already pastes normally, so this is belt and
+braces — but because matching is on substrings, it's the only way to protect a
+local tab whose name overlaps a remote's. WSL distro tabs are the usual case.
+
+With `CLIP_HOSTS` unset, every Windows Terminal window except those in
+`CLIP_LOCAL` is intercepted, using `CLIP_REMOTE_HOST`/`CLIP_REMOTE_USER`.
 
 If the files came from the internet, clear the mark-of-the-web tag or
 PowerShell will refuse to run the script:

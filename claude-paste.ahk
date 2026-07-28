@@ -32,7 +32,28 @@ global SCRIPT := EnvGet("CLIP_SCRIPT") || A_ScriptDir "\clip-to-remote.ps1"
 ; every Windows Terminal window.
 global HOST_MAP := ParseHosts(EnvGet("CLIP_HOSTS"))
 
+; Tab titles that are always local, checked before anything else and never
+; uploaded. WSL distro tabs belong here:
+;
+;     setx CLIP_LOCAL "Athena;Folio"
+;
+; Not strictly required -- a title absent from CLIP_HOSTS already pastes
+; normally -- but it makes the intent explicit and, because matching is on
+; substrings, it is the only way to keep a local tab safe when its name
+; overlaps a remote's.
+global LOCAL_LIST := ParseList(EnvGet("CLIP_LOCAL"))
+
 SetTitleMatchMode 2
+
+ParseList(spec) {
+    out := []
+    for entry in StrSplit(spec, ";") {
+        entry := Trim(entry)
+        if (entry != "")
+            out.Push(entry)
+    }
+    return out
+}
 
 ParseHosts(spec) {
     m := []
@@ -49,12 +70,19 @@ ParseHosts(spec) {
 ; Returns "" when this window isn't a remote terminal, otherwise the scp
 ; target ("user@host", or "-" meaning fall back to the script's own defaults).
 RemoteTarget() {
-    global HOST_MAP
+    global HOST_MAP, LOCAL_LIST
     if !WinActive("ahk_exe WindowsTerminal.exe")
         return ""
+
+    title := WinGetTitle("A")
+
+    ; Deny-list wins over everything, so a local tab can never upload.
+    for l in LOCAL_LIST
+        if InStr(title, l)
+            return ""
+
     if !HOST_MAP.Length
         return "-"
-    title := WinGetTitle("A")
     for h in HOST_MAP
         if InStr(title, h.match)
             return h.target
