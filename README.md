@@ -140,8 +140,21 @@ PowerShell will refuse to run the script:
 Unblock-File -Path .\clip-to-remote.ps1
 ```
 
-Then double-click `claude-paste.ahk`. A green **H** appears in the tray. To
-start it at login, put a shortcut in `shell:startup` (Win+R → `shell:startup`).
+Then double-click `claude-paste.ahk`. A green **H** appears in the tray.
+
+To start it at login:
+
+```powershell
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\claude-paste.lnk")
+$s.TargetPath = "$HOME\claude-ssh-image-paste\claude-paste.ahk"
+$s.WorkingDirectory = "$HOME\claude-ssh-image-paste"
+$s.Save()
+```
+
+If you run Windows Terminal elevated, this won't do — an unelevated AHK can't
+send keys to an elevated window. Register a scheduled task with
+`-RunLevel Highest` and an `-AtLogOn` trigger instead, and use only one of the
+two methods so you don't end up with two instances contending for Ctrl+V.
 
 ## Usage
 
