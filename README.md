@@ -83,7 +83,7 @@ tab to its process. The dependable signal is the window title, which you can
 pin per profile. In your remote profile's Windows Terminal settings:
 
 ```json
-"tabTitle": "ares",
+"tabTitle": "devbox",
 "suppressApplicationTitle": true
 ```
 
@@ -91,11 +91,11 @@ pin per profile. In your remote profile's Windows Terminal settings:
 constant. Then:
 
 ```powershell
-setx CLIP_TITLE_MATCH ares
+setx CLIP_TITLE_MATCH devbox
 ```
 
-Ctrl+V now only intercepts in tabs whose title contains `ares`; everywhere else
-it's an ordinary paste. Substring match, so `"tabTitle": "ares — prod"` works
+Ctrl+V now only intercepts in tabs whose title contains `devbox`; everywhere else
+it's an ordinary paste. Substring match, so `"tabTitle": "devbox — prod"` works
 just as well.
 
 If the files came from the internet, clear the mark-of-the-web tag or

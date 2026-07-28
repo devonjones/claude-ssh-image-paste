@@ -20,8 +20,8 @@ global SCRIPT := EnvGet("CLIP_SCRIPT") || A_ScriptDir "\clip-to-remote.ps1"
 ; the correct thing to paste.
 ;
 ; Pin the title in that profile's Windows Terminal settings so it can't drift:
-;     "tabTitle": "ares", "suppressApplicationTitle": true
-; then:  setx CLIP_TITLE_MATCH ares
+;     "tabTitle": "devbox", "suppressApplicationTitle": true
+; then:  setx CLIP_TITLE_MATCH devbox
 global TITLE_MATCH := EnvGet("CLIP_TITLE_MATCH")
 
 SetTitleMatchMode 2
